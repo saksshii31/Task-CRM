@@ -52,8 +52,8 @@ const register = async (req, res) => {
 
     await db.query(
       `INSERT INTO users 
-       (first_name, last_name, email, password, company_name, phone_number)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       (first_name, last_name, email, password, company_name, phone_number, role_id)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
       [first_name, last_name, email, hashed, company_name, phone_number]
     );
 
@@ -67,7 +67,6 @@ const register = async (req, res) => {
 };
 
 //login-controller
-
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -76,9 +75,9 @@ const login = async (req, res) => {
       return res.status(400).json({ message: "All fields are required!" });
     }
 
-    //  Get user
+    // 1️⃣ Get user with role
     const [users] = await db.query(
-      "SELECT id, email, password FROM users WHERE email=?",
+      "SELECT id, email, password, role_id FROM users WHERE email=?",
       [email]
     );
 
@@ -88,54 +87,41 @@ const login = async (req, res) => {
 
     const user = users[0];
 
+    // 2️⃣ Password check
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
       return res.status(400).json({ message: "Invalid email or password!" });
     }
 
-    //  Get role + permissions
-    const [roles] = await db.query(
-      `SELECT r.id, r.name, r.permissions
-       FROM staff s
-       JOIN roles r ON r.id = s.role_id
-       WHERE s.user_id = ?`,
-      [user.id]
-    );
 
-    if (!roles.length) {
-      return res.status(403).json({ message: "No role assigned" });
-    }
-
-    const role = roles[0];
-
-    //  JWT payload includes permissions
+    // 5️⃣ JWT
     const token = jwt.sign(
       {
         id: user.id,
         email: user.email,
-        role: role.name,
-        permissions: role.permissions
+        role_id: user.role_id
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    // Cookie
+    // 6️⃣ Cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false,
+      secure: false,        // true in production (HTTPS)
       sameSite: "lax",
     });
 
+    // 7️⃣ Response
     res.json({
       message: "Login successful",
       user: {
         id: user.id,
         email: user.email,
-        role: role.name,
-        permissions: role.permissions
+        role_id: user.role_idd
       }
     });
+
   } catch (err) {
     console.error("LOGIN ERROR:", err);
     res.status(500).json({ message: "Server error" });
